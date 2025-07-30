@@ -1,0 +1,12 @@
+<launch>
+    <arg name="vrpn_topic_pose" default="/vrpn_client_node/cybird_qutor/pose" /> 
+    <arg name="vrpn_topic_twist" default="/vrpn_client_node/cybird_qutor/twist" /> 
+    <node pkg="odom_converter" type="odom_converter" name="odom_converter" output="screen">
+        <!-- <remap from="~/pose" to="/vrpn_client_node/vtol_fhr/pose"/>
+        <remap from="~/twist" to="/vrpn_client_node/vtol_fhr/twist"/> -->
+        <remap from="~/pose" to="$(arg vrpn_topic_pose)"/>
+        <remap from="~/twist" to="$(arg vrpn_topic_twist)"/>
+    </node>
+
+</launch>
+

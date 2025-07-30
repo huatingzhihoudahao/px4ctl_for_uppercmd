@@ -1,0 +1,2 @@
+set(decomp_ros_msgs_MESSAGE_FILES "/home/cybird/下载/px4_ctrl/src/utils/DecompROS/decomp_ros_msgs/msg/Ellipsoid.msg;/home/cybird/下载/px4_ctrl/src/utils/DecompROS/decomp_ros_msgs/msg/EllipsoidArray.msg;/home/cybird/下载/px4_ctrl/src/utils/DecompROS/decomp_ros_msgs/msg/Polyhedron.msg;/home/cybird/下载/px4_ctrl/src/utils/DecompROS/decomp_ros_msgs/msg/PolyhedronArray.msg")
+set(decomp_ros_msgs_SERVICE_FILES "")

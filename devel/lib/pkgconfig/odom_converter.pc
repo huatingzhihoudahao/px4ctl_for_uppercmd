@@ -1,0 +1,8 @@
+prefix=/home/cybird/下载/px4_ctrl/devel
+
+Name: odom_converter
+Description: Description of odom_converter
+Version: 0.0.0
+Cflags: -I/home/cybird/下载/px4_ctrl/src/VICON/VICON-1b49b33fba2e9ff10391a41f2413d334102e9874/odom_converter/include
+Libs: -L${prefix}/lib 
+Requires: roscpp std_msgs

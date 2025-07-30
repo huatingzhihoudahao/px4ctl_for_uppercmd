@@ -1,0 +1,15 @@
+<launch>
+	<arg name="px4ctl_odometry_topic" default="/ekf/ekf_odom" />  
+	<node pkg="px4ctrl" type="px4ctrl_node" name="px4ctrl" output="screen">
+		<!-- <remap from="~odom" to="/vins_estimator/imu_propagate" /> -->
+		<!-- <remap from="~odom" to="/odom_converter/converted_odom" /> -->
+		<remap from="~odom" to="$(arg px4ctl_odometry_topic)" />
+		<!-- <remap from="~odom" to="/mavros/local_position/odom" /> -->
+		<!--/mavros/adjusted_position-->
+		<remap from="~cmd" to="/at_w_cmd" />
+
+        <rosparam command="load" file="$(find px4ctrl)/config/ctrl_param_q250.yaml" />
+	</node>
+	<!-- <node pkg ="tf" type="static_transform_publisher" name="trans" args="0 0 0 0 0 0 map world 200" />
+	<node pkg ="tf" type="static_transform_publisher" name="trans1" args="0 0 0 0 0 0 map odom 200" /> -->
+</launch>
