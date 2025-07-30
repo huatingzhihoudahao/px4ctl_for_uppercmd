@@ -169,17 +169,21 @@ void PX4CtrlFSM::process()
 	{
 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
-			state = MANUAL_CTRL;
-			// switch(positon_manual_offboard_mode){
-			// 	case 0:
-			// 	case 1:
-			// 	case 2:
-			// }
 
-			toggle_offboard_mode(false);
-			std::cout<<"     rc_data.is_hover_mode"<<rc_data.is_hover_mode<<std::endl;
-			std::cout<<"     odom_is_received(now_time)"<<odom_is_received(now_time)<<std::endl;
-			ROS_WARN("[px4ctrl] AUTO_HOVER(L2) --> MANUAL_CTRL(L1)");
+			mavros_msgs::SetMode offb_set_mode;
+			offb_set_mode.request.custom_mode="POSCTL";
+
+			if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
+			{
+				ROS_ERROR("Exit POSCTL rejected by PX4!");
+				
+			}
+			else{
+				ROS_INFO("From AUTO_HOVER(L3) to AUTO_HOVER(L2)!-----call posctl");
+			}
+			ROS_INFO("[px4ctrl] From AUTO_HOVER(L2) to AUTO_HOVER(L2)!");
+			
+
 		}
 		else if (rc_data.is_command_mode && cmd_is_received(now_time))   //cmd模式 经过更改后应该属于mpc
 		{
@@ -249,15 +253,18 @@ void PX4CtrlFSM::process()
 
 	case CMD_CTRL:
 	{
-		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
-		{
-			state = MANUAL_CTRL;
-			toggle_offboard_mode(false);
-//先检查遥控5通modeset是maunal posctl offboard
-//如果被切走那就按maunal posctl算
-			ROS_WARN("[px4ctrl] From CMD_CTRL(L3) to MANUAL_CTRL(L1)!");
-		}
-		else if (!rc_data.is_command_mode || !cmd_is_received(now_time))
+// 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
+// 		{
+// 			state = MANUAL_CTRL;
+// 			toggle_offboard_mode(false);
+// //先检查遥控5通modeset是maunal posctl offboard
+// //如果被切走那就按maunal posctl算
+// 			ROS_WARN("[px4ctrl] From CMD_CTRL(L3) to MANUAL_CTRL(L1)!");
+// 		}
+// 		else if (!rc_data.is_command_mode || !cmd_is_received(now_time))
+// 		{
+
+		if (!rc_data.is_command_mode || !cmd_is_received(now_time)||!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
 			state = AUTO_HOVER;
 			// set_hov_with_odom();
@@ -278,7 +285,7 @@ void PX4CtrlFSM::process()
 				ROS_INFO("From CMD_CTRL(L3) to AUTO_HOVER(L2)!-----call posctl");
 			}
 			ROS_INFO("[px4ctrl] From CMD_CTRL(L3) to AUTO_HOVER(L2)!");
-
+			
 //我想改成一拨就是posctl
 
 		}
