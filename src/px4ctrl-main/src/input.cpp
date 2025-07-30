@@ -79,8 +79,8 @@ void RC_Data_t::feed(mavros_msgs::RCInConstPtr pMsg)
         is_hover_mode = false;
 
 
-    if(mode < MODE_THRESHOLD_position_lowerbound){//manual
-        positon_manual_offboard_mode = 0;
+    if(mode < MODE_THRESHOLD_position_lowerbound){//manual  //这个也被我从0改1了
+        positon_manual_offboard_mode = 1;
     }
     else if(mode > MODE_THRESHOLD_position_upperbound){//offboard
         positon_manual_offboard_mode = 2;
