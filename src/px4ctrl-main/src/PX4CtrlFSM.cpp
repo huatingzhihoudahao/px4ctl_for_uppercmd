@@ -10,6 +10,8 @@ PX4CtrlFSM::PX4CtrlFSM(Parameter_t &param_, Controller &controller_) : param(par
 {
 	state = MANUAL_CTRL;
 	hover_pose.setZero();
+	cmdctrl_reentry_forbidden_latched = false;
+	cmdctrl_acc_setpoint_published_once = false;
 }
 
 /* 
@@ -57,17 +59,17 @@ void PX4CtrlFSM::process()
 		{
 			if (!odom_is_received(now_time))
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_HOVER(L2). No odom!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_HOVER(L2). No odom!");
 				break;
 			}
 			if (cmd_is_received(now_time))
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_HOVER(L2). You are sending commands before toggling into AUTO_HOVER, which is not allowed. Stop sending commands now!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_HOVER(L2). You are sending commands before toggling into AUTO_HOVER, which is not allowed. Stop sending commands now!");
 				break;
 			}
 			if (odom_data.v.norm() > 3.0)
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_HOVER(L2). Odom_Vel=%fm/s, which seems that the locolization module goes wrong!", odom_data.v.norm());
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_HOVER(L2). Odom_Vel=%fm/s, which seems that the locolization module goes wrong!", odom_data.v.norm());
 				break;
 			}
 
@@ -76,42 +78,42 @@ void PX4CtrlFSM::process()
 			set_hov_with_odom();
 			toggle_offboard_mode(true);//offboard
 
-			ROS_INFO("\033[32m[px4ctrl] MANUAL_CTRL(L1) --> AUTO_HOVER(L2)\033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] MANUAL_CTRL(L1) --> AUTO_HOVER(L2)\033[32m");
 		}
 		else if (param.takeoff_land.enable && takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::TAKEOFF) // Try to jump to AUTO_TAKEOFF
 		{
 			if (!odom_is_received(now_time))
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_TAKEOFF. No odom!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_TAKEOFF. No odom!");
 				break;
 			}
 			if (cmd_is_received(now_time))
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_TAKEOFF. You are sending commands before toggling into AUTO_TAKEOFF, which is not allowed. Stop sending commands now!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_TAKEOFF. You are sending commands before toggling into AUTO_TAKEOFF, which is not allowed. Stop sending commands now!");
 				break;
 			}
 			if (odom_data.v.norm() > 0.1)
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_TAKEOFF. Odom_Vel=%fm/s, non-static takeoff is not allowed!", odom_data.v.norm());
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_TAKEOFF. Odom_Vel=%fm/s, non-static takeoff is not allowed!", odom_data.v.norm());
 				break;
 			}
 			if (!get_landed())
 			{
-				ROS_ERROR("[px4ctrl] Reject AUTO_TAKEOFF. land detector says that the drone is not landed now!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_TAKEOFF. land detector says that the drone is not landed now!");
 				break;
 			}
 			if (rc_is_received(now_time)) // Check this only if RC is connected.
 			{
 				if (!rc_data.is_hover_mode || !rc_data.is_command_mode || !rc_data.check_centered())
 				{
-					ROS_ERROR("[px4ctrl] Reject AUTO_TAKEOFF. If you have your RC connected, keep its switches at \"auto hover\" and \"command control\" states, and all sticks at the center, then takeoff again.");
+					ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_TAKEOFF. If you have your RC connected, keep its switches at \"auto hover\" and \"command control\" states, and all sticks at the center, then takeoff again.");
 					while (ros::ok())
 					{
 						ros::Duration(0.01).sleep();
 						ros::spinOnce();
 						if (rc_data.is_hover_mode && rc_data.is_command_mode && rc_data.check_centered())
 						{
-							ROS_INFO("\033[32m[px4ctrl] OK, you can takeoff again.\033[32m");
+							ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] OK, you can takeoff again.\033[32m");
 							break;
 						}
 					}
@@ -135,28 +137,28 @@ void PX4CtrlFSM::process()
 			}
 			takeoff_land.toggle_takeoff_land_time = now_time;
 
-			ROS_INFO("\033[32m[px4ctrl] MANUAL_CTRL(L1) --> AUTO_TAKEOFF\033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] MANUAL_CTRL(L1) --> AUTO_TAKEOFF\033[32m");
 		}
 		else if(rc_data.positon_manual_offboard_mode==2){
 			//MANUAL_CTRL
 			toggle_offboard_mode(false);
-			ROS_INFO("\033[32m[px4ctrl]  positon_manual_offboard_mode=2  but position_ctrl\033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl]  positon_manual_offboard_mode=2  but position_ctrl\033[32m");
 		}
 		else if(rc_data.positon_manual_offboard_mode==1){
 			//MANUAL_CTRL
 			toggle_offboard_mode(false);
-			ROS_INFO("\033[32m[px4ctrl]  position_ctrl\033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl]  position_ctrl\033[32m");
 		}
 		else if(rc_data.positon_manual_offboard_mode==0){
 			//MANUAL_CTRL
 			toggle_offboard_mode(false);
-			ROS_INFO("\033[32m[px4ctrl] MANUAL_CTRL(L1) \033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] MANUAL_CTRL(L1) \033[32m");
 		}
 		if (rc_data.toggle_reboot) // Try to reboot. EKF2 based PX4 FCU requires reboot when its state estimator goes wrong.
 		{
 			if (state_data.current_state.armed)
 			{
-				ROS_ERROR("[px4ctrl] Reject reboot! Disarm the drone first!");
+				ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject reboot! Disarm the drone first!");
 				break;
 			}
 			reboot_FCU();
@@ -167,36 +169,47 @@ void PX4CtrlFSM::process()
 
 	case AUTO_HOVER:
 	{
+		const bool recovery_latched =
+			param.forbid_cmdctrl_reentry_after_loss &&
+			cmdctrl_reentry_forbidden_latched;
+
 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
 
 			mavros_msgs::SetMode offb_set_mode;
-			offb_set_mode.request.custom_mode="POSCTL";
+			offb_set_mode.request.custom_mode="ALTCTL";
 
 			if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
 			{
-				ROS_ERROR("Exit POSCTL rejected by PX4!");
+				ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
 				
 			}
 			else{
-				ROS_INFO("From AUTO_HOVER(L3) to AUTO_HOVER(L2)!-----call posctl");
+				ROS_INFO_THROTTLE(1.0,"From AUTO_HOVER(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
 			}
-			ROS_INFO("[px4ctrl] From AUTO_HOVER(L2) to AUTO_HOVER(L2)!");
+			ROS_INFO_THROTTLE(1.0,"[px4ctrl] From AUTO_HOVER(L2) to AUTO_HOVER(L2)!");
 			
 
 		}
 		else if (rc_data.is_command_mode && cmd_is_received(now_time))   //cmd模式 经过更改后应该属于mpc
 		{
-			if (state_data.current_state.mode == "OFFBOARD")
+			const bool reentry_blocked =
+				param.forbid_cmdctrl_reentry_after_loss &&
+				cmdctrl_reentry_forbidden_latched;
+			if (!reentry_blocked && state_data.current_state.mode == "OFFBOARD")
 			{
 				state = CMD_CTRL;
 				// des = get_cmd_des();
 				des_at_W= get_cmd_des();
-				ROS_INFO("\033[32m[px4ctrl] AUTO_HOVER(L2) --> CMD_CTRL(L3)\033[32m");
+				ROS_INFO_THROTTLE(1.0,"\033[32m[px4ctrl] AUTO_HOVER(L2) --> CMD_CTRL(L3)\033[32m");
 				start_pose_data.recv_new_msg=false;
 				start_pose_data.reached_start_pose=true;
 				start_pose_data.getmsg_want_toggle=false;
-				ROS_INFO("start_pose_data.reached_start_pose 1  start_pose_data.recv_new_msg 0");
+				ROS_INFO_THROTTLE(1.0,"start_pose_data.reached_start_pose 1  start_pose_data.recv_new_msg 0");
+			}
+			else if (reentry_blocked)
+			{
+				ROS_INFO_THROTTLE(1.0, "[px4ctrl] CMD_CTRL re-entry blocked after one loss. Restart node to re-enable.");
 			}
 		}
 		else if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
@@ -205,18 +218,18 @@ void PX4CtrlFSM::process()
 			state = AUTO_LAND;
 			set_start_pose_for_takeoff_land(odom_data);
 
-			ROS_INFO("\033[32m[px4ctrl] AUTO_HOVER(L2) --> AUTO_LAND\033[32m");
+			ROS_INFO_THROTTLE(1.0,"\033[32m[px4ctrl] AUTO_HOVER(L2) --> AUTO_LAND\033[32m");
 		}
-		else if(start_pose_data.recv_new_msg && (! start_pose_data.reached_start_pose))
+		else if((!recovery_latched) && start_pose_data.recv_new_msg && (! start_pose_data.reached_start_pose))
 		{//当心不要从cmd指令消失达到hover的时候去hover这个了
 			des =get_hover_des_with_planner_start_pose();
 			set_hov_with_odom();
 			if(start_pose_data.getmsg_want_toggle==true){
 				toggle_offboard_mode(true);//这样一直call这个服务好吗
-				ROS_INFO("toggle_offboard_mode(true)  in   AUTO_HOVER");
+				ROS_INFO_THROTTLE(1.0,"toggle_offboard_mode(true)  in   AUTO_HOVER");
 				start_pose_data.getmsg_want_toggle=false;
 			}
-			ROS_INFO("\033[32m[px4ctrl]  get_hover_des_with_planner_start_pose()  \033[32m");
+			ROS_INFO_THROTTLE(1.0,"\033[32m[px4ctrl]  get_hover_des_with_planner_start_pose()  \033[32m");
 		}
 		else//前后左右 位置模式
 		{
@@ -230,19 +243,19 @@ void PX4CtrlFSM::process()
 			// 	publish_trigger(odom_data.msg);
 			// 	ROS_INFO("\033[32m[px4ctrl] TRIGGER sent, allow user command.\033[32m");
 			// }
-
-			if(state_data.current_state.mode != "POSCTL"){
-				 std::cout<<"state_data.current_state.mode"<<state_data.current_state.mode<<std::endl;
+			// std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] debug state_data.current_state.mode " << state_data.current_state.mode << std::endl;
+			if(state_data.current_state.mode != "ALTCTL"){
+				 // std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] state_data.current_state.mode " << state_data.current_state.mode << std::endl;
 				mavros_msgs::SetMode offb_set_mode;
-				offb_set_mode.request.custom_mode="POSCTL";
-				std::cout<<"rc_data.positon_manual_offboard_mode  "<<rc_data.positon_manual_offboard_mode<<std::endl;
+				offb_set_mode.request.custom_mode="ALTCTL";
+				// std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] rc_data.positon_manual_offboard_mode " << rc_data.positon_manual_offboard_mode << std::endl;
 				if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
 				{
-					ROS_ERROR("Exit POSCTL rejected by PX4!");
+					ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
 					
 				}
 				else{
-					ROS_INFO("--------------------call posctl");
+					ROS_INFO_THROTTLE(1.0,"--------------------call ALTCTL");
 				}
 
 			}
@@ -266,6 +279,11 @@ void PX4CtrlFSM::process()
 
 		if (!rc_data.is_command_mode || !cmd_is_received(now_time)||!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
+			if (param.forbid_cmdctrl_reentry_after_loss)
+			{
+				cmdctrl_reentry_forbidden_latched = true;
+				ROS_WARN("[px4ctrl] CMD_CTRL exited once, re-entry is now forbidden until node restart.");
+			}
 			state = AUTO_HOVER;
 			// set_hov_with_odom();
 			// des = get_hover_des();
@@ -274,17 +292,17 @@ void PX4CtrlFSM::process()
 //如果被切走或者突然没指令那就按悬停算  
 
 			mavros_msgs::SetMode offb_set_mode;
-			offb_set_mode.request.custom_mode="POSCTL";
+			offb_set_mode.request.custom_mode="ALTCTL";
 
 			if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
 			{
-				ROS_ERROR("Exit POSCTL rejected by PX4!");
+				ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
 				
 			}
 			else{
-				ROS_INFO("From CMD_CTRL(L3) to AUTO_HOVER(L2)!-----call posctl");
+				ROS_INFO_THROTTLE(1.0,"From CMD_CTRL(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
 			}
-			ROS_INFO("[px4ctrl] From CMD_CTRL(L3) to AUTO_HOVER(L2)!");
+			ROS_INFO_THROTTLE(1.0,"[px4ctrl] From CMD_CTRL(L3) to AUTO_HOVER(L2)!");
 			
 //我想改成一拨就是posctl
 
@@ -298,7 +316,7 @@ void PX4CtrlFSM::process()
 
 		if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
 		{
-			ROS_ERROR("[px4ctrl] Reject AUTO_LAND, which must be triggered in AUTO_HOVER. \
+			ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_LAND, which must be triggered in AUTO_HOVER. \
 					Stop sending control commands for longer than %fs to let px4ctrl return to AUTO_HOVER first.",
 					  param.msg_timeout.cmd);
 		}
@@ -316,7 +334,7 @@ void PX4CtrlFSM::process()
 		{
 			state = AUTO_HOVER;
 			set_hov_with_odom();
-			ROS_INFO("\033[32m[px4ctrl] AUTO_TAKEOFF --> AUTO_HOVER(L2)\033[32m");
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] AUTO_TAKEOFF --> AUTO_HOVER(L2)\033[32m");
 
 			takeoff_land.delay_trigger.first = true;
 			takeoff_land.delay_trigger.second = now_time + ros::Duration(AutoTakeoffLand_t::DELAY_TRIGGER_TIME);
@@ -343,7 +361,7 @@ void PX4CtrlFSM::process()
 			state = AUTO_HOVER;
 			set_hov_with_odom();
 			des = get_hover_des();
-			ROS_INFO("[px4ctrl] From AUTO_LAND to AUTO_HOVER(L2)!");
+			ROS_INFO_THROTTLE(1.0, "[px4ctrl] From AUTO_LAND to AUTO_HOVER(L2)!");
 		}
 		else if (!get_landed())
 		{
@@ -356,7 +374,7 @@ void PX4CtrlFSM::process()
 			static bool print_once_flag = true;
 			if (print_once_flag)
 			{
-				ROS_INFO("\033[32m[px4ctrl] Wait for abount 10s to let the drone arm.\033[32m");
+				ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] Wait for abount 10s to let the drone arm.\033[32m");
 				print_once_flag = false;
 			}
 
@@ -370,7 +388,7 @@ void PX4CtrlFSM::process()
 						print_once_flag = true;
 						state = MANUAL_CTRL;
 						toggle_offboard_mode(false); // toggle off offboard after disarm
-						ROS_INFO("\033[32m[px4ctrl] AUTO_LAND --> MANUAL_CTRL(L1)\033[32m");
+						ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] AUTO_LAND --> MANUAL_CTRL(L1)\033[32m");
 					}
 
 					last_trial_time = now_time.toSec();
@@ -419,7 +437,7 @@ void PX4CtrlFSM::process()
 			break;
 			
 		default:
-			ROS_ERROR("Illegal pose_slover selection!");
+			ROS_ERROR_THROTTLE(1.0, "Illegal pose_slover selection!");
 			return;
 		}
 	}
@@ -451,12 +469,13 @@ void PX4CtrlFSM::process()
 		if(state == CMD_CTRL){
 			if (param.use_normal_or_acc_closeloop){
 				publish_at_w_from_mpc(des_at_W, now_time);
-				ROS_ERROR("publish_at_w_from_mpc!");
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!");
 			}
 			else{
 				publish_offboard_mode();
 				publish_acc_closeloop_ctrl(des_at_W, now_time);
-				ROS_ERROR("publish_at_w_from_mpc!  acc_closeloop");
+				cmdctrl_acc_setpoint_published_once = true;
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!  acc_closeloop");
 			}
 		}
 		else{
@@ -468,16 +487,25 @@ void PX4CtrlFSM::process()
 		if(state == CMD_CTRL){
 			if (param.use_normal_or_acc_closeloop){
 				publish_at_w_from_mpc(des_at_W, now_time);
-				ROS_ERROR("publish_at_w_from_mpc!");
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!");
 			}
 			else{
 				publish_offboard_mode();
 				publish_acc_closeloop_ctrl(des_at_W, now_time);
-				ROS_ERROR("publish_at_w_from_mpc!  acc_closeloop");
+				cmdctrl_acc_setpoint_published_once = true;
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!  acc_closeloop");
 			}
 		}
 		else{
-			publish_attitude_ctrl(u, now_time);
+			if (cmdctrl_acc_setpoint_published_once && state == AUTO_HOVER)
+			{
+				ROS_WARN_THROTTLE(1.0, "[px4ctrl] Skip publish_attitude_ctrl in AUTO_HOVER after CMD_CTRL acc-closeloop takeover.");
+			}
+			else
+			{
+				ROS_INFO_THROTTLE(1.0, "IN ELSE OF CMD_CTRL,publish_attitude_ctrl");
+				publish_attitude_ctrl(u, now_time);
+			}
 		}
 		
 	}
@@ -612,7 +640,7 @@ Desired_State_t PX4CtrlFSM::get_rotor_speed_up_des(const ros::Time now)
 	double des_a_z = exp((delta_t - AutoTakeoffLand_t::MOTORS_SPEEDUP_TIME) * 6.0) * 7.0 - 7.0; // Parameters 6.0 and 7.0 are just heuristic values which result in a saticfactory curve.
 	if (des_a_z > 0.1)
 	{
-		ROS_ERROR("des_a_z > 0.1!, des_a_z=%f", des_a_z);
+		ROS_ERROR_THROTTLE(1.0, "des_a_z > 0.1!, des_a_z=%f", des_a_z);
 		des_a_z = 0.0;
 	}
 
@@ -713,8 +741,8 @@ Desired_State_t PX4CtrlFSM::get_hover_des_with_planner_start_pose()
 	des.yaw_rate = 0.0;
 	// start_pose_data.recv_new_msg=false;
 	double yaw_cur = get_yaw_from_quaternion(odom_data.q);
-	std::cout<<"des.p "<<des.p<<"  odom_data.p  "<<odom_data.p<<std::endl;
-	std::cout<<"des.yaw "<<des.yaw<<"  yaw_cur  "<<yaw_cur<<std::endl;
+	// std::cout<<"des.p "<<des.p<<"  odom_data.p  "<<odom_data.p<<std::endl;
+	// std::cout<<"des.yaw "<<des.yaw<<"  yaw_cur  "<<yaw_cur<<std::endl;
 	// if((des.p-odom_data.p).norm()<0.11 and abs(yaw_cur-des.yaw)<0.1)
 	// {
 	// 	start_pose_data.recv_new_msg=false;
@@ -797,7 +825,7 @@ void PX4CtrlFSM::publish_acc_closeloop_ctrl(const Desired_at_w_t &u, const ros::
 
 	msg.thrust_acc_sp = u.ft;//期望的加速度而不是推力
 	msg.model_ff= controller.get_thrust_0_1_from_ref_ft(u.ft*param.mass);//get_thrust_0_1_from_ref_ft传进去的是力
-	std::cout<<" u.ft"<< u.ft<<" u.wx"<< u.wx<<" u.wy"<< u.wy<<" u.wz"<< u.wz<<" msg.model_ff "<<msg.model_ff<<std::endl;
+	// std::cout<<" u.ft"<< u.ft<<" u.wx"<< u.wx<<" u.wy"<< u.wy<<" u.wz"<< u.wz<<" msg.model_ff "<<msg.model_ff<<std::endl;
 	at_w_setpt_pub.publish(msg);
 }
 void PX4CtrlFSM::publish_bodyrate_ctrl(const Controller_Output_t &u, const ros::Time &stamp)
@@ -866,7 +894,8 @@ void PX4CtrlFSM::publish_offboard_mode()
 bool PX4CtrlFSM::toggle_offboard_mode(bool on_off)
 {
 	mavros_msgs::SetMode offb_set_mode;
-    std::cout<<"toggle_offboard_mode "<<on_off<<"rc_data.positon_manual_offboard_mode"<<rc_data.positon_manual_offboard_mode<<std::endl;
+    // std::cout << "[ms=" << (ros::Time::now().toNSec() / 1000000ULL) << "] toggle_offboard_mode " << on_off
+    //           << " rc_data.positon_manual_offboard_mode " << rc_data.positon_manual_offboard_mode << std::endl;
 	if (on_off)
 	{
 		// state_data.state_before_offboard = state_data.current_state;
@@ -876,23 +905,23 @@ bool PX4CtrlFSM::toggle_offboard_mode(bool on_off)
 		offb_set_mode.request.custom_mode = "OFFBOARD";
 		if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
 		{
-			ROS_ERROR("Enter OFFBOARD rejected by PX4!");
+			ROS_ERROR_THROTTLE(1.0, "Enter OFFBOARD rejected by PX4!");
 			return false;
 		}
 	}
 	else
 	{
-		offb_set_mode.request.custom_mode = "POSCTL";//state_data.state_before_offboard.mode;
+		offb_set_mode.request.custom_mode = "ALTCTL";//state_data.state_before_offboard.mode;
 		// std::cout<<"state_data.state_before_offboard.mode  mostly maybe maunal"<<state_data.state_before_offboard.mode<<std::endl;
 		if(rc_data.positon_manual_offboard_mode==1){
-			offb_set_mode.request.custom_mode="POSCTL";
+			offb_set_mode.request.custom_mode="ALTCTL";
 		}
 		else if(rc_data.positon_manual_offboard_mode==0){
 			offb_set_mode.request.custom_mode="MANUAL";
 		}	
 		if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
 		{
-			ROS_ERROR("Exit OFFBOARD rejected by PX4!");
+			ROS_ERROR_THROTTLE(1.0, "Exit OFFBOARD rejected by PX4!");
 			return false;
 		}
 	}
@@ -910,9 +939,9 @@ bool PX4CtrlFSM::toggle_arm_disarm(bool arm)
 	if (!(arming_client_srv.call(arm_cmd) && arm_cmd.response.success))
 	{
 		if (arm)
-			ROS_ERROR("ARM rejected by PX4! Kill-switch activated?");
+			ROS_ERROR_THROTTLE(1.0, "ARM rejected by PX4! Kill-switch activated?");
 		else
-			ROS_ERROR("DISARM rejected by PX4!");
+			ROS_ERROR_THROTTLE(1.0, "DISARM rejected by PX4!");
 
 		return false;
 	}
@@ -932,7 +961,7 @@ void PX4CtrlFSM::reboot_FCU()
 
 	reboot_FCU_srv.call(reboot_srv);
 
-	ROS_INFO("Reboot FCU");
+	ROS_INFO_THROTTLE(1.0, "Reboot FCU");
 
 	// if (param.print_dbg)
 	// 	printf("reboot result=%d(uint8_t), success=%d(uint8_t)\n", reboot_srv.response.result, reboot_srv.response.success);

@@ -99,6 +99,7 @@ public:
 
 	bool use_bodyrate_ctrl;
 	bool use_normal_or_acc_closeloop;
+	bool forbid_cmdctrl_reentry_after_loss;
 	// bool print_dbg;
 
 	Parameter_t();

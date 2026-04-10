@@ -77,6 +77,8 @@ public:
 private:
 	State_t state; // Should only be changed in PX4CtrlFSM::process() function!
 	AutoTakeoffLand_t takeoff_land;
+	bool cmdctrl_reentry_forbidden_latched;
+	bool cmdctrl_acc_setpoint_published_once;
 
 	// ---- control related ----
 	Desired_State_t get_hover_des();
