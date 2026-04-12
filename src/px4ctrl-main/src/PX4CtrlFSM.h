@@ -79,6 +79,7 @@ private:
 	AutoTakeoffLand_t takeoff_land;
 	bool cmdctrl_reentry_forbidden_latched;
 	bool cmdctrl_acc_setpoint_published_once;
+	ros::Time last_altctl_request_time;
 
 	// ---- control related ----
 	Desired_State_t get_hover_des();
@@ -97,6 +98,7 @@ private:
 	void set_hov_with_odom();
 	void set_hov_with_rc();
     void publish_offboard_mode();
+	bool request_altctl_mode(const ros::Time &now_time, const char *reason);
 	bool toggle_offboard_mode(bool on_off); // It will only try to toggle once, so not blocked.
 	bool toggle_arm_disarm(bool arm); // It will only try to toggle once, so not blocked.
 	void reboot_FCU();

@@ -12,6 +12,7 @@ PX4CtrlFSM::PX4CtrlFSM(Parameter_t &param_, Controller &controller_) : param(par
 	hover_pose.setZero();
 	cmdctrl_reentry_forbidden_latched = false;
 	cmdctrl_acc_setpoint_published_once = false;
+	last_altctl_request_time = ros::Time(0);
 }
 
 /* 
@@ -175,18 +176,7 @@ void PX4CtrlFSM::process()
 
 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
-
-			mavros_msgs::SetMode offb_set_mode;
-			offb_set_mode.request.custom_mode="ALTCTL";
-
-			if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
-			{
-				ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
-				
-			}
-			else{
-				ROS_INFO_THROTTLE(1.0,"From AUTO_HOVER(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
-			}
+			request_altctl_mode(now_time, "From AUTO_HOVER(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
 			ROS_INFO_THROTTLE(1.0,"[px4ctrl] From AUTO_HOVER(L2) to AUTO_HOVER(L2)!");
 			
 
@@ -244,21 +234,7 @@ void PX4CtrlFSM::process()
 			// 	ROS_INFO("\033[32m[px4ctrl] TRIGGER sent, allow user command.\033[32m");
 			// }
 			// std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] debug state_data.current_state.mode " << state_data.current_state.mode << std::endl;
-			if(state_data.current_state.mode != "ALTCTL"){
-				 // std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] state_data.current_state.mode " << state_data.current_state.mode << std::endl;
-				mavros_msgs::SetMode offb_set_mode;
-				offb_set_mode.request.custom_mode="ALTCTL";
-				// std::cout << "[ms=" << (now_time.toNSec() / 1000000ULL) << "] rc_data.positon_manual_offboard_mode " << rc_data.positon_manual_offboard_mode << std::endl;
-				if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
-				{
-					ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
-					
-				}
-				else{
-					ROS_INFO_THROTTLE(1.0,"--------------------call ALTCTL");
-				}
-
-			}
+			request_altctl_mode(now_time, "--------------------call ALTCTL");
 		}
 
 		break;
@@ -291,17 +267,7 @@ void PX4CtrlFSM::process()
 //再检查遥控6通有没有紧急切到悬停  或者左边5通又没有切 右边
 //如果被切走或者突然没指令那就按悬停算  
 
-			mavros_msgs::SetMode offb_set_mode;
-			offb_set_mode.request.custom_mode="ALTCTL";
-
-			if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
-			{
-				ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
-				
-			}
-			else{
-				ROS_INFO_THROTTLE(1.0,"From CMD_CTRL(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
-			}
+			request_altctl_mode(now_time, "From CMD_CTRL(L3) to AUTO_HOVER(L2)!-----call ALTCTL");
 			ROS_INFO_THROTTLE(1.0,"[px4ctrl] From CMD_CTRL(L3) to AUTO_HOVER(L2)!");
 			
 //我想改成一拨就是posctl
@@ -885,6 +851,35 @@ void PX4CtrlFSM::publish_offboard_mode()
 	msg.body_rate = true;
 	// msg.timestamp = 
 	offboard_heartbeat_pub.publish(msg);
+}
+
+bool PX4CtrlFSM::request_altctl_mode(const ros::Time &now_time, const char *reason)
+{
+	static constexpr double ALTCTL_RETRY_INTERVAL_SEC = 0.1;
+
+	if (state_data.current_state.mode == "ALTCTL")
+	{
+		return true;
+	}
+
+	if (!last_altctl_request_time.isZero() &&
+		(now_time - last_altctl_request_time).toSec() < ALTCTL_RETRY_INTERVAL_SEC)
+	{
+		return false;
+	}
+
+	mavros_msgs::SetMode offb_set_mode;
+	offb_set_mode.request.custom_mode = "ALTCTL";
+	last_altctl_request_time = now_time;
+
+	if (!(set_FCU_mode_srv.call(offb_set_mode) && offb_set_mode.response.mode_sent))
+	{
+		ROS_ERROR_THROTTLE(1.0, "Exit ALTCTL rejected by PX4!");
+		return false;
+	}
+
+	ROS_INFO_THROTTLE(1.0, "%s", reason);
+	return true;
 }
 
 
