@@ -1062,7 +1062,7 @@ bool Controller::almostZero(const double value) const
 double Controller::get_thrust_0_1_from_ref_ft(const double ft) const
 {
   double acc=ft/param.mass;
-  std::cout<<"thr2acc "<<thr2acc<<std::endl;
+  // std::cout<<"thr2acc "<<thr2acc<<std::endl;
   double thrust_0_1 = acc / thr2acc;
   // double thrust_0_1 = acc / 28 ;//24;
   return thrust_0_1;

@@ -100,6 +100,9 @@ public:
 	bool use_bodyrate_ctrl;
 	bool use_normal_or_acc_closeloop;
 	bool forbid_cmdctrl_reentry_after_loss;
+	// 四通道（roll/pitch/throttle/yaw）偏离中位超过百分比则停止发 offboard 设定点并请求 ALTCTL（锁存至节点重启）
+	bool rc_stick_abort_offboard_enable;
+	double rc_stick_abort_offboard_percent;
 	// bool print_dbg;
 
 	Parameter_t();
