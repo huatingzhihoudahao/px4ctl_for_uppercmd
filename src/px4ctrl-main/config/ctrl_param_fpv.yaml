@@ -9,8 +9,6 @@ ctrl_freq_max   : 100.0
 use_bodyrate_ctrl: false
 use_normal_or_acc_closeloop: false
 forbid_cmdctrl_reentry_after_loss: false # 仿真/调试默认允许自动重入
-rc_stick_abort_offboard_enable: false
-rc_stick_abort_offboard_percent: 5.0
 max_manual_vel: 1.0
 max_angle: 30  # Attitude angle limit in degree. A negative value means no limit.
 low_voltage: 13.2 # 4S battery

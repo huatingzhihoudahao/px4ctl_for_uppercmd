@@ -72,8 +72,6 @@ void Parameter_t::config_from_ros_handle(const ros::NodeHandle &nh)
 	read_essential_param(nh, "use_bodyrate_ctrl", use_bodyrate_ctrl);
 	read_essential_param(nh, "use_normal_or_acc_closeloop", use_normal_or_acc_closeloop);
 	read_essential_param(nh, "forbid_cmdctrl_reentry_after_loss", forbid_cmdctrl_reentry_after_loss);
-	read_essential_param(nh, "rc_stick_abort_offboard_enable", rc_stick_abort_offboard_enable);
-	read_essential_param(nh, "rc_stick_abort_offboard_percent", rc_stick_abort_offboard_percent);
 	
 	read_essential_param(nh, "max_manual_vel", max_manual_vel);
 	read_essential_param(nh, "max_angle", max_angle);

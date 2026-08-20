@@ -2,17 +2,14 @@
 # ⭐⭐⭐  Set parameters carefully for satisfied performance!   ⭐⭐⭐ #
 #########################################################################
 
-mass        : 2.00 #1.642 # kg 1.188是小电池  1.836 vtol  #1.642  #加雷达vtol  2110 
+mass        : 2.10 #1.642 # kg 1.188是小电池  1.836 vtol  #1.642  #加雷达vtol  2110 
 gra         : 9.8 
 pose_solver : 3    # 0:From ZhepeiWang (drag & less singular) 1:From ZhepeiWang, 2:From rotor-drag  3: From hkust n1-ctrl
 ctrl_freq_max   : 100.0
 ctrl_rate   : 50.0
-use_bodyrate_ctrl: false #原本是false   不要改不要改
-use_normal_or_acc_closeloop: false #    不要改不要改    true normal
-forbid_cmdctrl_reentry_after_loss: true  # 实机建议true: CMD_CTRL丢失一次后禁止自动重入
-# 四通道原始 PWM（与 input 一致：中位 1500、±500）任一 |归一化| > percent/100 则本节点不再发 publish_attitude_ctrl / publish_acc_closeloop_ctrl，并锁存、请求 ALTCTL（与 COM_OF_LOSS_T 等配合；断流间隙推力行为以固件为准，一般非“真空”）
-rc_stick_abort_offboard_enable: true
-rc_stick_abort_offboard_percent: 10.0   # 例如 5 表示 5%，即 0.05
+use_bodyrate_ctrl: false #原本是false
+use_normal_or_acc_closeloop: false # true normal
+forbid_cmdctrl_reentry_after_loss: false  #true  # 实机建议true: CMD_CTRL丢失一次后禁止自动重入
 max_manual_vel: 0.5
 max_angle: 30  # Attitude angle limit in degree. A negative value means no limit.
 low_voltage: 13.2 # 4S battery
@@ -32,7 +29,7 @@ auto_takeoff_land:
     enable: true # raw true
     enable_auto_arm: true # raw true
     no_RC: false
-    takeoff_height: 1.5 #23.5 #23.5 # m  10
+    takeoff_height: 19.5 #1.5 #23.5 #23.5 # m  10
     takeoff_land_speed: 0.36 # m/s
 
 thrust_model: # The model that maps thrust signal u(0~1) to real thrust force F(Unit:N): F=K1*Voltage^K2*(K3*u^2+(1-K3)*u). 
@@ -44,7 +41,7 @@ thrust_model: # The model that maps thrust signal u(0~1) to real thrust force F(
     K2: 1.6942 # Needs precise calibration!
     K3: 0.6786 # Needs precise calibration! K3 equals THR_MDL_FAC in https://docs.px4.io/master/en/config_mc/pid_tuning_guide_multicopter.html.
     # approximate thrust mapping parameters
-    hover_percentage: 0.39  # Thrust percentage in Stabilize/Arco mode # *  #0.25
+    hover_percentage: 0.4  # Thrust percentage in Stabilize/Arco mode # *  #0.25
 
 gain: 
     # Cascade PID controller. Recommend to read the code.

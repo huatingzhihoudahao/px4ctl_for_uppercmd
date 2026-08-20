@@ -79,7 +79,6 @@ private:
 	AutoTakeoffLand_t takeoff_land;
 	bool cmdctrl_reentry_forbidden_latched;
 	bool cmdctrl_acc_setpoint_published_once;
-	bool rc_stick_abort_offboard_latched;
 	ros::Time last_altctl_request_time;
 
 	// ---- control related ----
@@ -111,9 +110,6 @@ private:
 	void publish_bodyrate_ctrl(const Controller_Output_t &u, const ros::Time &stamp);
 	void publish_attitude_ctrl(const Controller_Output_t &u, const ros::Time &stamp);
 	void publish_trigger(const nav_msgs::Odometry &odom_msg);
-
-	// 使用 rc_data.msg.channels[0..3] 原始 PWM（与 input.cpp 一致：中位 1500，行程 ±500）
-	bool apply_rc_stick_abort_offboard_if_needed(const ros::Time &now_time);
 };
 
 #endif

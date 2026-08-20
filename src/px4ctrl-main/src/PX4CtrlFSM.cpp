@@ -12,7 +12,6 @@ PX4CtrlFSM::PX4CtrlFSM(Parameter_t &param_, Controller &controller_) : param(par
 	hover_pose.setZero();
 	cmdctrl_reentry_forbidden_latched = false;
 	cmdctrl_acc_setpoint_published_once = false;
-	rc_stick_abort_offboard_latched = false;
 	last_altctl_request_time = ros::Time(0);
 }
 
@@ -172,9 +171,8 @@ void PX4CtrlFSM::process()
 	case AUTO_HOVER:
 	{
 		const bool recovery_latched =
-			(param.forbid_cmdctrl_reentry_after_loss &&
-			 cmdctrl_reentry_forbidden_latched) ||
-			rc_stick_abort_offboard_latched;
+			param.forbid_cmdctrl_reentry_after_loss &&
+			cmdctrl_reentry_forbidden_latched;
 
 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
 		{
@@ -183,12 +181,19 @@ void PX4CtrlFSM::process()
 			
 
 		}
+		// LAND 绝对优先：与上层 cmd、forbid_cmdctrl_reentry 无关，只要本周期有 land 指令就只进 AUTO_LAND
+		else if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
+		{
+			state = AUTO_LAND;
+			set_start_pose_for_takeoff_land(odom_data);
+			ROS_INFO_THROTTLE(1.0,"\033[32m[px4ctrl] AUTO_HOVER(L2) --> AUTO_LAND\033[32m");
+		}
 		else if (rc_data.is_command_mode && cmd_is_received(now_time))   //cmd模式 经过更改后应该属于mpc
 		{
+			// 仅影响 CMD_CTRL 重入；不约束上面的 LAND 分支
 			const bool reentry_blocked =
-				(param.forbid_cmdctrl_reentry_after_loss &&
-				 cmdctrl_reentry_forbidden_latched) ||
-				rc_stick_abort_offboard_latched;
+				param.forbid_cmdctrl_reentry_after_loss &&
+				cmdctrl_reentry_forbidden_latched;
 			if (!reentry_blocked && state_data.current_state.mode == "OFFBOARD")
 			{
 				state = CMD_CTRL;
@@ -204,14 +209,6 @@ void PX4CtrlFSM::process()
 			{
 				ROS_INFO_THROTTLE(1.0, "[px4ctrl] CMD_CTRL re-entry blocked after one loss. Restart node to re-enable.");
 			}
-		}
-		else if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
-		{
-
-			state = AUTO_LAND;
-			set_start_pose_for_takeoff_land(odom_data);
-
-			ROS_INFO_THROTTLE(1.0,"\033[32m[px4ctrl] AUTO_HOVER(L2) --> AUTO_LAND\033[32m");
 		}
 		else if((!recovery_latched) && start_pose_data.recv_new_msg && (! start_pose_data.reached_start_pose))
 		{//当心不要从cmd指令消失达到hover的时候去hover这个了
@@ -245,6 +242,15 @@ void PX4CtrlFSM::process()
 
 	case CMD_CTRL:
 	{
+		// LAND 绝对优先：有降落指令则只进 AUTO_LAND，不因仍收到上层 cmd、不因 forbid 重入而卡住
+		if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
+		{
+			state = AUTO_LAND;
+			set_start_pose_for_takeoff_land(odom_data);
+			ROS_INFO_THROTTLE(1.0, "\033[32m[px4ctrl] CMD_CTRL(L3) --> AUTO_LAND (land overrides cmd)\033[32m");
+			break;
+		}
+
 // 		if (!rc_data.is_hover_mode || !odom_is_received(now_time))
 // 		{
 // 			state = MANUAL_CTRL;
@@ -281,13 +287,6 @@ void PX4CtrlFSM::process()
 			// des = get_cmd_des();
 			// toggle_offboard_mode(true);
 			des_at_W= get_cmd_des();
-		}
-
-		if (takeoff_land_data.triggered && takeoff_land_data.takeoff_land_cmd == quadrotor_msgs::TakeoffLand::LAND)
-		{
-			ROS_ERROR_THROTTLE(1.0, "[px4ctrl] Reject AUTO_LAND, which must be triggered in AUTO_HOVER. \
-					Stop sending control commands for longer than %fs to let px4ctrl return to AUTO_HOVER first.",
-					  param.msg_timeout.cmd);
 		}
 
 		break;
@@ -432,79 +431,53 @@ void PX4CtrlFSM::process()
 	{
 		controller.estimateThrustModel(imu_data.a, bat_data.volt, odom_data.v, param);
 	}
-
-	// 四通道急停：偏离中位则锁存并停止发 offboard 设定点（本帧起不再发 attitude/acc offboard）。
-	// 与“拨杆后 0.4s 才进 ALTCTL、期间仍有 offboard”不同：此处主动停发后，飞控侧通常仍保持上一拍设定点直至 COM_OF_LOSS_T 超时再切模态，并非必然进入 ACRO/电机停转；具体以固件与实机为准。
-	// apply_rc_stick_abort_offboard_if_needed 在 AUTO_LAND 时恒为 false（不阻塞发布、不在此阶段锁存/切状态），保证 land.sh 始终能发 attitude。
-	const bool block_offboard_for_rc_stick = apply_rc_stick_abort_offboard_if_needed(now_time);
-
 	// STEP4: publish control commands to mavros
-	// 常规配置：ctrl_param 中 use_bodyrate_ctrl: false 且 use_normal_or_acc_closeloop: false。
-	// takeoff / AUTO_HOVER / start_pose 等走 controller+publish_attitude_ctrl；上层 atw 走 publish_acc_closeloop_ctrl，均属 offboard 类设定点。
-	// 若 use_bodyrate_ctrl==true 或 use_normal_or_acc_closeloop==true：下列分支已弃用（未与 RC 四通道急停联调），请勿在生产配置中开启。
 	if (param.use_bodyrate_ctrl)
 	{
-		// 已弃用：请保持 use_bodyrate_ctrl=false；否则与 RC 四通道急停、acc 闭环分支未联调。
-		if (!block_offboard_for_rc_stick)
-		{
-			if (state == CMD_CTRL)
-			{
-				if (param.use_normal_or_acc_closeloop)
-				{
-					// 已弃用：请保持 use_normal_or_acc_closeloop=false
-					publish_at_w_from_mpc(des_at_W, now_time);
-					ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!");
-				}
-				else
-				{
-					// 已弃用：与默认 acc 闭环路径重复时请用下方 else 分支
-					publish_offboard_mode();
-					publish_acc_closeloop_ctrl(des_at_W, now_time);
-					cmdctrl_acc_setpoint_published_once = true;
-					ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!  acc_closeloop");
-				}
-			}
-			else
-			{
-				publish_bodyrate_ctrl(u, now_time);
-			}
-		}
-	}
-	else
-	{
-		if (block_offboard_for_rc_stick)
-		{
-			ROS_WARN_THROTTLE(2.0, "[px4ctrl] RC stick abort: skip publish_attitude_ctrl / publish_acc_closeloop_ctrl.");
-		}
-		else if (state == CMD_CTRL)
-		{
-			if (param.use_normal_or_acc_closeloop)
-			{
-				// 已弃用：请保持 use_normal_or_acc_closeloop=false（本机用 thrust+body_rate 的 mavlink 路径）
+		if(state == CMD_CTRL){
+			if (param.use_normal_or_acc_closeloop){
 				publish_at_w_from_mpc(des_at_W, now_time);
 				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!");
 			}
-			else
-			{
+			else{
 				publish_offboard_mode();
 				publish_acc_closeloop_ctrl(des_at_W, now_time);
 				cmdctrl_acc_setpoint_published_once = true;
 				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!  acc_closeloop");
 			}
 		}
-		else
-		{
-			if (cmdctrl_acc_setpoint_published_once && state == AUTO_HOVER)
+		else{
+			publish_bodyrate_ctrl(u, now_time);
+		}
+	}
+	else
+	{
+		if(state == CMD_CTRL){
+			if (param.use_normal_or_acc_closeloop){
+				publish_at_w_from_mpc(des_at_W, now_time);
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!");
+			}
+			else{
+				publish_offboard_mode();
+				publish_acc_closeloop_ctrl(des_at_W, now_time);
+				cmdctrl_acc_setpoint_published_once = true;
+				ROS_ERROR_THROTTLE(1.0, "publish_at_w_from_mpc!  acc_closeloop");
+			}
+		}
+		else{
+			// 仅当「当前为 AUTO_HOVER 且 CMD_CTRL 曾发过 acc 闭环」时 skip attitude；AUTO_LAND / AUTO_TAKEOFF 等
+			// state!=AUTO_HOVER 必走下方 publish_attitude_ctrl，避免自动降落 (land.sh) 断流。（勿把条件改成笼统的 state!=CMD_CTRL）
+			if (cmdctrl_acc_setpoint_published_once && state == AUTO_HOVER && param.forbid_cmdctrl_reentry_after_loss)
 			{
 				ROS_WARN_THROTTLE(1.0, "[px4ctrl] Skip publish_attitude_ctrl in AUTO_HOVER after CMD_CTRL acc-closeloop takeover.");
 			}
 			else
 			{
-				// 注意：此处是 state != CMD_CTRL（如 AUTO_HOVER / AUTO_TAKEOFF），不是「在 CMD_CTRL 里」
-				ROS_INFO_THROTTLE(1.0, "[px4ctrl] publish_attitude_ctrl (state!=CMD_CTRL, e.g. AUTO_HOVER)");
+				ROS_INFO_THROTTLE(1.0, "[px4ctrl] publish_attitude_ctrl (state!=CMD_CTRL, e.g. AUTO_HOVER / AUTO_TAKEOFF / AUTO_LAND)");
 				publish_attitude_ctrl(u, now_time);
 			}
 		}
+		
 	}
 
 
@@ -882,93 +855,6 @@ void PX4CtrlFSM::publish_offboard_mode()
 	msg.body_rate = true;
 	// msg.timestamp = 
 	offboard_heartbeat_pub.publish(msg);
-}
-
-bool PX4CtrlFSM::apply_rc_stick_abort_offboard_if_needed(const ros::Time &now_time)
-{
-	const bool rc_ok = rc_is_received(now_time);
-	const double thr_norm =
-		std::max(0.0, std::min(100.0, param.rc_stick_abort_offboard_percent)) / 100.0;
-
-	if ((int)rc_data.msg.channels.size() >= 4)
-	{
-		double x[4];
-		double max_abs = 0.0;
-		for (int i = 0; i < 4; ++i)
-		{
-			x[i] = ((double)rc_data.msg.channels[i] - 1500.0) / 500.0;
-			max_abs = std::max(max_abs, std::fabs(x[i]));
-		}
-		const bool would_abort = param.rc_stick_abort_offboard_enable && rc_ok && !rc_stick_abort_offboard_latched &&
-								 (max_abs > thr_norm);
-		ROS_INFO_THROTTLE(
-			1.0,
-			"[rc_stick_abort dbg] enable=%d latched=%d rc_ok=%d thr_gate=%.4f (param %.1f%%) "
-			"ch=[%u,%u,%u,%u] pct_signed=[%.2f%%,%.2f%%,%.2f%%,%.2f%%] max|pct|=%.2f%% %s",
-			(int)param.rc_stick_abort_offboard_enable,
-			(int)rc_stick_abort_offboard_latched,
-			(int)rc_ok,
-			thr_norm,
-			param.rc_stick_abort_offboard_percent,
-			(unsigned)rc_data.msg.channels[0],
-			(unsigned)rc_data.msg.channels[1],
-			(unsigned)rc_data.msg.channels[2],
-			(unsigned)rc_data.msg.channels[3],
-			x[0] * 100.0,
-			x[1] * 100.0,
-			x[2] * 100.0,
-			x[3] * 100.0,
-			max_abs * 100.0,
-			would_abort ? "->TRIGGER" : "");
-	}
-
-	// 降落阶段：不因四通道偏移而锁存、切 AUTO_HOVER 或请求 ALTCTL，避免打断 get_takeoff_land_des / land.sh
-	if (state == AUTO_LAND)
-		return false;
-
-	if (rc_stick_abort_offboard_latched)
-		return true;
-	if (!param.rc_stick_abort_offboard_enable)
-		return false;
-	if (!rc_ok)
-		return false;
-	if ((int)rc_data.msg.channels.size() < 4)
-		return false;
-
-	const double thr = thr_norm;
-	for (int i = 0; i < 4; ++i)
-	{
-		const double x = ((double)rc_data.msg.channels[i] - 1500.0) / 500.0;
-		if (std::fabs(x) > thr)
-		{
-			ROS_WARN("[px4ctrl] RC stick abort: TRIGGER axis=%d pwm=%u |norm|=%.4f (thr=%.4f) ch=[%u,%u,%u,%u]",
-					 i,
-					 (unsigned)rc_data.msg.channels[i],
-					 std::fabs(x),
-					 thr,
-					 (unsigned)rc_data.msg.channels[0],
-					 (unsigned)rc_data.msg.channels[1],
-					 (unsigned)rc_data.msg.channels[2],
-					 (unsigned)rc_data.msg.channels[3]);
-			rc_stick_abort_offboard_latched = true;
-			if (param.forbid_cmdctrl_reentry_after_loss && state == CMD_CTRL)
-				cmdctrl_reentry_forbidden_latched = true;
-
-			if (state == CMD_CTRL || state == AUTO_TAKEOFF)
-			{
-				const State_t prev = state;
-				state = AUTO_HOVER;
-				if (prev == AUTO_TAKEOFF)
-					set_hov_with_odom();
-			}
-
-			request_altctl_mode(now_time, "[px4ctrl] RC stick abort offboard -> request ALTCTL");
-			ROS_WARN_THROTTLE(1.0,
-							  "[px4ctrl] RC stick abort: latched, skip offboard setpoints until node restart.");
-			return true;
-		}
-	}
-	return false;
 }
 
 bool PX4CtrlFSM::request_altctl_mode(const ros::Time &now_time, const char *reason)
